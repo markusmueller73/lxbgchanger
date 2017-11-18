@@ -1,41 +1,143 @@
-﻿#include <stdlib.h>
-#include <stdio.h>
-#include <limits.h>
-#include <string.h>
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <dirent.h>
-#include <ctype.h>
-#include <unistd.h>
-#include <stdarg.h>
-#include <time.h>
+﻿#include "bgchanger.h"
 
-//#define DEBUG
+int main ( int argc, char *argv[] ){
+    
+    char config_file[PATH_MAX+NAME_MAX];
+    struct config_s *config = malloc ( sizeof ( struct config_s ) );
 
-struct img_node_s {
-    char *filename;
-    struct img_node_s *next;
-};
-
-struct config_s {
-    char last_dir[PATH_MAX];
-    char last_wp[NAME_MAX];
-    long timeout;
-};
-
-char* add_slash     ( char * );
-char* get_temp_dir  ( char * );
-char* get_file_ext  ( char * );
-char* get_file_name ( char * );
-int is_dir      ( char * );
-int is_file     ( char * );
-void show_help  ( char * );
-void lst_append ( struct img_node_s ** , char * );
-void lst_delete ( struct img_node_s ** );
-int  lst_count  ( struct img_node_s * );
-void lst_print  ( struct img_node_s * );
-int load_config ( char * , struct config_s * );
-int save_config ( char * , struct config_s * );
+    strcpy( config_file , getenv( "HOME" ) );
+    add_slash( config_file );
+    #ifdef DEBUG
+    strcat( config_file, ".config/bgchange_dbg.conf" );
+    #else
+    strcat( config_file, ".config/bgchange.conf" );
+    #endif
+    
+	config->timeout = 0;
+	config->recursive = 0;
+    
+    if ( argc == 1 ){
+		if ( load_config( config_file, config ) != 0 ){
+			fprintf( stdout, "BackGroundChanger - switch desktop background in a LXDE desktop environment using PCManFM.\n" );
+			fprintf( stdout, "Type '%s -h' for help!\n", argv[0] );
+			return EXIT_FAILURE;
+		}
+    }
+    else{
+	    int option = 0;
+	    opterr = 0;
+	    
+	    load_config( config_file, config );
+	    
+        while ( ( option = getopt ( argc, argv, "d:hrt:" ) ) != -1 ){
+        
+			switch ( option ){
+				case 'd':
+				case 'D':
+					strcpy ( config->last_dir, optarg );
+					dbg( "current dir: %s", config->last_dir );
+					break;
+				
+				case 'h':
+				case 'H':
+					show_help( argv[0] );
+					return EXIT_FAILURE;
+				
+				case 'r':
+				case 'R':
+					config->recursive = 1;
+					dbg( "scan dirs recursive" );
+					break;
+				case 't':
+				case 'T':
+					config->timeout = atoi( optarg );
+					dbg( "set timeout to %d mins", config->timeout );
+					break;
+				
+				case '?':
+					if ( optopt == 'd' || optopt == 'D' || optopt == 't' || optopt == 'T' ){
+						fprintf ( stderr, "Option -%c requires an argument.\n", optopt );
+					}
+					else if ( isprint (optopt) ){
+						fprintf (stderr, "Unknown option '-%c'.\n", optopt);
+					}
+					else{
+						fprintf ( stderr, "Unknown option character '\\x%x'.\n", optopt );
+					}
+					return EXIT_FAILURE;
+				default:
+				   ;
+			}	
+		}
+	}
+	   
+    if ( is_dir( config->last_dir ) == 0 ){
+        add_slash( config->last_dir );
+    }
+    else {
+        fprintf( stderr, "The directory '%s' did not exist.\n", config->last_dir );
+        return EXIT_FAILURE;
+    }
+    
+    if ( config->timeout <= 0 ){
+        config->timeout = 10;
+    }
+    
+    struct img_node_s *lst_start = NULL;
+    struct img_node_s *lst_cur = NULL;
+    
+    if ( check_dir ( config->last_dir , &lst_start , config->recursive ) == 0 ){
+        fprintf( stderr, "There are no compatible images in the directory.");
+        return EXIT_FAILURE;
+    }
+    lst_cur = lst_start;
+    
+    #ifdef DEBUG
+    lst_print( lst_cur );
+    #endif
+    
+	while ( lst_cur->next != NULL ) {
+		if ( strcmp( config->last_wp, get_file_name( lst_cur->filename ) ) == 0 ){
+			dbg( "select last image: %s", config->last_wp );
+			break;
+		}
+		lst_cur = lst_cur->next;
+	}
+    
+    char switch_command[PATH_MAX+NAME_MAX+25];    
+    while ( 1 ){
+        
+        sprintf( switch_command, "pcmanfm --set-wallpaper=%s", lst_cur->filename );
+        strcpy( config->last_wp, get_file_name( lst_cur->filename ) );
+        save_config( config_file, config );
+        
+        dbg( "next command: %s", switch_command );
+        
+        #ifndef DEBUG
+        if ( system( switch_command ) == -1 ){
+			fprintf( stderr, "Execution error for command '%s'\n", switch_command );
+		}
+        #endif
+        
+        #ifdef DEBUG
+        sleep ( (unsigned int)config->timeout );
+        #else
+        sleep ( ( (unsigned int)config->timeout ) * 60 );
+        #endif
+        
+        if ( lst_cur->next == NULL ){
+            lst_cur = lst_start;
+        }
+        else{
+            lst_cur = lst_cur->next;
+        } 
+        
+    }
+    
+    save_config( config_file, config );
+        
+    return EXIT_SUCCESS;
+}
 
 void dbg( char *msg , ... ){
     #ifdef DEBUG
@@ -48,176 +150,6 @@ void dbg( char *msg , ... ){
         fprintf( stdout, "\n" );
     }
     #endif
-}
-
-int main ( int argc, char *argv[] ){
-    
-    char config_file[PATH_MAX+NAME_MAX];
-    char image_dir[PATH_MAX];
-    char temp_dir[PATH_MAX];
-    int timeout = 0;
-    int option = 0;
-    long timeout_secs = 0;
-    struct config_s *config_struct = malloc ( sizeof ( struct config_s ) );
-    
-    if ( argc == 1 ){
-        fprintf( stdout, "Type '%s -h' for help!\n", argv[0] );
-        return EXIT_FAILURE;
-    }
-    
-    strcpy( config_file , getenv( "HOME" ) );
-    add_slash( config_file );
-    strcat( config_file, ".config/bgchange.conf" );
-    //strcpy( config_file, "C:\\Users\\MuellerM152\\bgchange.conf" );
-    
-    opterr = 0;
-    while ( ( option = getopt ( argc, argv, "d:ht:" ) ) != -1 ){
-        
-        switch ( option ){
-            case 'd':
-            case 'D':
-                strcpy ( image_dir, optarg );
-                dbg( "current dir: %s", image_dir );
-                break;
-            
-            case 'h':
-            case 'H':
-                show_help( argv[0] );
-                return EXIT_FAILURE;
-            
-            case 't':
-            case 'T':
-                timeout = atoi( optarg );
-                dbg( "set timeout to %d mins", timeout );
-                break;
-            
-            case '?':
-                if ( optopt == 'd' || optopt == 'D' ){
-                    fprintf ( stderr, "Option -%c requires an argument.\n", optopt );
-                }
-                else if ( optopt == 't' || optopt == 'T' ){
-                    fprintf ( stderr, "Option -%c requires an argument.\n", optopt );
-                }
-                else if ( isprint (optopt) ){
-                    fprintf (stderr, "Unknown option '-%c'.\n", optopt);
-                }
-                else{
-                    fprintf ( stderr, "Unknown option character '\\x%x'.\n", optopt );
-                }
-                return EXIT_FAILURE;
-            default:
-               ;
-        }
-        
-    }
-    
-    load_config( config_file, config_struct );
-    
-    if ( is_dir( image_dir ) == 0 ){
-        add_slash( image_dir );
-        get_temp_dir( temp_dir );
-        add_slash( temp_dir );
-    }
-    else {
-        fprintf( stderr, "The directory '%s' did not exist.\n", image_dir );
-        return EXIT_FAILURE;
-    }
-    
-    if ( timeout <= 0 ){
-        timeout = 10;
-    }
-    
-    strcpy( config_struct->last_dir, image_dir );
-    config_struct->timeout = timeout;
-    
-    #ifndef DEBUG
-    timeout_secs = timeout * 60;
-    #else
-    timeout_secs = timeout;
-    #endif
-
-    struct img_node_s *lst_start = NULL;
-    struct img_node_s *lst_cur = NULL;
-    struct dirent *direntry = NULL;
-    
-    DIR *dirp = opendir( image_dir );
-    while ( ( direntry = readdir( dirp ) ) != NULL) {
-        
-        if ( strcmp ( direntry->d_name, "." ) != 0 && strcmp ( direntry->d_name, ".." ) != 0 ){
-            
-            char *file_ext = get_file_ext( direntry->d_name );
-            char fullpathandfile[PATH_MAX + NAME_MAX];
-            
-            strcpy( fullpathandfile , image_dir );
-            if ( strcmp ( file_ext, "bmp" ) == 0 || strcmp ( file_ext, "BMP" ) == 0 ){
-                strcat ( fullpathandfile , direntry->d_name );
-                lst_append( &lst_start, fullpathandfile );
-            }
-            else if ( strcmp ( file_ext, "png" ) == 0 || strcmp ( file_ext, "PNG" ) == 0 ){
-                strcat ( fullpathandfile , direntry->d_name );
-                lst_append( &lst_start, fullpathandfile );
-            }
-            else if ( strcmp ( file_ext, "jpg" ) == 0 || strcmp ( file_ext, "jpeg" ) == 0 || strcmp ( file_ext, "JPG" ) == 0 || strcmp ( file_ext, "JPEG" ) == 0){
-                strcat ( fullpathandfile , direntry->d_name );
-                lst_append( &lst_start, fullpathandfile );
-            }
-            
-        }
-        
-    }
-    closedir ( dirp );
-    
-    if ( lst_count ( lst_start ) == 0 ){
-        fprintf( stderr, "There are no compatible images in the directory.");
-        return EXIT_FAILURE;
-    }
-    lst_cur = lst_start;
-    
-    #ifdef DEBUG
-    lst_print( lst_cur );
-    #endif
-    
-    if ( strcmp( config_struct->last_dir , image_dir ) == 0 ){
-		while ( lst_cur->next != NULL ){
-			if ( strcmp( get_file_name( lst_cur->filename ) , config_struct->last_wp ) == 0 ){
-				dbg( "selecting last wallpaper: %s", lst_cur->filename );
-				break;
-			}
-			lst_cur = lst_cur->next;
-		}	
-	}
-    
-    save_config( config_file, config_struct );
-    
-    char switch_command[PATH_MAX+NAME_MAX+25];    
-    while ( 1 ){
-        
-        sprintf( switch_command, "pcmanfm --set-wallpaper=%s", lst_cur->filename );
-        strcpy( config_struct->last_wp, get_file_name( lst_cur->filename ) );
-        save_config( config_file, config_struct );
-        
-        dbg( "next command: %s", switch_command );
-        
-        #ifndef DEBUG
-        if ( system( switch_command ) == -1 ){
-			fprintf( stderr, "Error - cant't execute %s\n", switch_command );
-		}
-        #endif
-        
-        sleep ( (unsigned int)timeout_secs );
-        
-        if ( lst_cur->next == NULL ){
-            lst_cur = lst_start;
-        }
-        else{
-            lst_cur = lst_cur->next;
-        } 
-        
-    }
-    
-    save_config( config_file, config_struct );
-        
-    return EXIT_SUCCESS;
 }
 
 char *add_slash ( char *dir ){
@@ -284,12 +216,13 @@ char* get_file_name ( char *file ){
 }
 
 void show_help ( char *prgname ) {
-    fprintf( stdout, "Wallpaperchanger - switch desktop background in a Lubuntu environment.\n\n" );
+    fprintf( stdout, "BackGroundChanger - switch desktop background in a LXDE desktop environment using PCManFM.\n\n" );
     fprintf( stdout, "Usage:\n%s [OPTIONS]\n\n", prgname );
     fprintf( stdout, "Options:\n");
     fprintf( stdout, "-d\tdirectory name of the background images\n" );
     fprintf( stdout, "-h\tshow this help text\n" );
-    fprintf( stdout, "-t\ttimeout between images in minutes (default is 10 mins)\n" );
+    fprintf( stdout, "-r\tcheck the directory recursive\n" );
+    fprintf( stdout, "-t\ttimeout between images in minutes (default is 10 mins)\n\n" );
 }
 
 int lst_init( struct img_node_s **lst, char *txt )
@@ -394,6 +327,7 @@ int load_config ( char *config_file, struct config_s *myconf ){
             sscanf( line, "LastImagePath=%s", myconf->last_dir);
             sscanf( line, "LastWallpaper=%s", myconf->last_wp);
             sscanf( line, "LastTimeout=%ld", &myconf->timeout);
+            sscanf( line, "CheckRecursive=%d", &myconf->recursive);
         }
         fclose( file_ptr );
     }
@@ -411,8 +345,52 @@ int save_config ( char *config_file, struct config_s *myconf ){
     fprintf( file_p, "LastImagePath=%s\n", myconf->last_dir );
     fprintf( file_p, "LastWallpaper=%s\n", myconf->last_wp );
     fprintf( file_p, "LastTimeout=%ld\n", myconf->timeout );
+    fprintf( file_p, "CheckRecursive=%d\n", myconf->recursive );
     fclose( file_p );
     dbg( "saved config successfully" );
     return 0;
 }
 
+int check_dir( char *image_dir , struct img_node_s **lst , int recursive ){
+
+	int images = 0;
+	struct dirent *direntry = NULL;		
+	DIR *dirp = opendir( image_dir );
+	
+	add_slash( image_dir );
+	
+	while ( ( direntry = readdir( dirp ) ) != NULL) {
+		
+		if ( strcmp ( direntry->d_name, "." ) != 0 && strcmp ( direntry->d_name, ".." ) != 0 ){
+			char fullpathandfile[PATH_MAX + NAME_MAX];
+			
+			strcpy( fullpathandfile , image_dir );
+			strcat ( fullpathandfile , direntry->d_name );
+			
+			if ( is_dir( fullpathandfile ) == 0 ){
+				if ( recursive == 1 ){
+					images += check_dir( fullpathandfile , &*lst , recursive );
+				}
+			}
+			else{
+				char *file_ext = get_file_ext( direntry->d_name );
+				if ( strcmp ( file_ext, "bmp" ) == 0 || strcmp ( file_ext, "BMP" ) == 0 ){
+					lst_append( &*lst, fullpathandfile );
+					images++;
+				}
+				else if ( strcmp ( file_ext, "png" ) == 0 || strcmp ( file_ext, "PNG" ) == 0 ){
+					lst_append( &*lst, fullpathandfile );
+					images++;
+				}
+				else if ( strcmp ( file_ext, "jpg" ) == 0 || strcmp ( file_ext, "jpeg" ) == 0 || strcmp ( file_ext, "JPG" ) == 0 || strcmp ( file_ext, "JPEG" ) == 0){
+					lst_append( &*lst, fullpathandfile );
+					images++;
+				}
+			}
+		}
+		
+	}
+	closedir ( dirp );
+	
+	return images;
+}
