@@ -119,7 +119,7 @@ int main ( int argc, char *argv[] ){
     char switch_command[PATH_MAX+NAME_MAX+25];    
     while ( 1 ){
         
-        sprintf( switch_command, "pcmanfm --set-wallpaper=%s --wallpaper-mode=%s", lst_cur->filename, config->wp_mode );
+        sprintf( switch_command, "pcmanfm --set-wallpaper=\"%s\" --wallpaper-mode=%s", lst_cur->filename, config->wp_mode );
         strcpy( config->last_wp, get_file_name( lst_cur->filename ) );
         save_config( config_file, config );
         
