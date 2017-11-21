@@ -1,4 +1,4 @@
-#ifndef _BGCHANGER_H_
+﻿#ifndef _BGCHANGER_H_
 #define _BGCHANGER_H_
 
 #include <stdlib.h>
@@ -16,6 +16,14 @@
 /* comment or uncomment this macro for DEBUG mode */
 //#define DEBUG
 
+#define MAJOR_VERSION 0
+#define MINOR_VERSION 2
+
+#define APP_NAME "Background Changer"
+#define APP_DESC "switch desktop background in a LXDE desktop environment using PCManFM"
+#define APP_EXEC "lxbgc"
+#define APP_CONF "lxbgc.conf"
+
 struct img_node_s {
     char *filename;
     struct img_node_s *next;
@@ -24,12 +32,15 @@ struct img_node_s {
 struct config_s {
     char last_dir[PATH_MAX];
     char last_wp[NAME_MAX];
+    char wp_mode[9];
     long timeout;
     int recursive;
 };
 
 void dbg( char *msg , ... );
 
+char* lower_case    ( char * );
+char* upper_case    ( char * );
 char* add_slash     ( char * );
 char* get_temp_dir  ( char * );
 char* get_file_ext  ( char * );
@@ -47,4 +58,3 @@ int check_dir( char * , struct img_node_s ** , int );
 
 
 #endif
-

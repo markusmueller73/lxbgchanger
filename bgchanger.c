@@ -5,72 +5,80 @@ int main ( int argc, char *argv[] ){
     char config_file[PATH_MAX+NAME_MAX];
     struct config_s *config = malloc ( sizeof ( struct config_s ) );
 
-    strcpy( config_file , getenv( "HOME" ) );
+    strcpy( config_file , getenv( "XDG_CONFIG_HOME" ) );
     add_slash( config_file );
     #ifdef DEBUG
-    strcat( config_file, ".config/bgchange_dbg.conf" );
+    strcat( config_file, "bgchange_dbg.conf" );
     #else
-    strcat( config_file, ".config/bgchange.conf" );
+    strcat( config_file, APP_CONF );
     #endif
     
-	config->timeout = 0;
-	config->recursive = 0;
+    config->timeout     = 0;
+    config->recursive   = 0;
     
     if ( argc == 1 ){
-		if ( load_config( config_file, config ) != 0 ){
-			fprintf( stdout, "BackGroundChanger - switch desktop background in a LXDE desktop environment using PCManFM.\n" );
-			fprintf( stdout, "Type '%s -h' for help!\n", argv[0] );
-			return EXIT_FAILURE;
-		}
+        if ( load_config( config_file, config ) != 0 ){
+            fprintf( stdout, "%s - %s.\n",APP_NAME, APP_DESC );
+            fprintf( stdout, "Type '%s -h' for help!\n", argv[0] );
+            return EXIT_FAILURE;
+        }
     }
     else{
-	    int option = 0;
-	    opterr = 0;
-	    
-	    load_config( config_file, config );
-	    
-        while ( ( option = getopt ( argc, argv, "d:hrt:" ) ) != -1 ){
+        int option = 0;
+        opterr = 0;
         
-			switch ( option ){
-				case 'd':
-				case 'D':
-					strcpy ( config->last_dir, optarg );
-					dbg( "current dir: %s", config->last_dir );
-					break;
-				
-				case 'h':
-				case 'H':
-					show_help( argv[0] );
-					return EXIT_FAILURE;
-				
-				case 'r':
-				case 'R':
-					config->recursive = 1;
-					dbg( "scan dirs recursive" );
-					break;
-				case 't':
-				case 'T':
-					config->timeout = atoi( optarg );
-					dbg( "set timeout to %d mins", config->timeout );
-					break;
-				
-				case '?':
-					if ( optopt == 'd' || optopt == 'D' || optopt == 't' || optopt == 'T' ){
-						fprintf ( stderr, "Option -%c requires an argument.\n", optopt );
-					}
-					else if ( isprint (optopt) ){
-						fprintf (stderr, "Unknown option '-%c'.\n", optopt);
-					}
-					else{
-						fprintf ( stderr, "Unknown option character '\\x%x'.\n", optopt );
-					}
-					return EXIT_FAILURE;
-				default:
-				   ;
-			}	
-		}
-	}
-	   
+        load_config( config_file, config );
+        
+        while ( ( option = getopt ( argc, argv, "d:hm:rt:v" ) ) != -1 ){
+        
+            switch ( option ){
+                case 'd':
+                case 'D':
+                    strcpy ( config->last_dir, optarg );
+                    dbg( "current dir: %s", config->last_dir );
+                    break;
+                
+                case 'h':
+                case 'H':
+                    show_help( argv[0] );
+                    return EXIT_FAILURE;
+                case 'm':
+                case 'M':
+                    strcpy ( config->wp_mode, optarg );
+                    lower_case( config->wp_mode );
+                    dbg( "current wallpaper mode: %s", config->wp_mode );
+                    break;
+                case 'r':
+                case 'R':
+                    config->recursive = 1;
+                    dbg( "scan dirs recursive" );
+                    break;
+                case 't':
+                case 'T':
+                    config->timeout = atoi( optarg );
+                    dbg( "set timeout to %d mins", config->timeout );
+                    break;
+                case 'v':
+                case 'V':
+                    fprintf( stdout, "Version %d.%d\n\n", MAJOR_VERSION, MINOR_VERSION );
+                    return EXIT_FAILURE;
+                case '?':
+                    if ( optopt == 'd' || optopt == 'D' || optopt == 'm' || optopt == 'M' || optopt == 't' || optopt == 'T' ){
+                        fprintf ( stderr, "Option -%c requires an argument.\n", optopt );
+                    }
+                    else if ( isprint (optopt) ){
+                        fprintf (stderr, "Unknown option '-%c'.\n", optopt);
+                    }
+                    else{
+                        fprintf ( stderr, "Unknown option character '\\x%x'.\n", optopt );
+                    }
+                    return EXIT_FAILURE;
+                default:
+                   ;
+            }   
+        }
+    }
+       
     if ( is_dir( config->last_dir ) == 0 ){
         add_slash( config->last_dir );
     }
@@ -81,6 +89,10 @@ int main ( int argc, char *argv[] ){
     
     if ( config->timeout <= 0 ){
         config->timeout = 10;
+    }
+    
+    if ( strlen( config->wp_mode ) == 0 ){
+        strcpy( config->wp_mode , "stretch" );
     }
     
     struct img_node_s *lst_start = NULL;
@@ -96,18 +108,18 @@ int main ( int argc, char *argv[] ){
     lst_print( lst_cur );
     #endif
     
-	while ( lst_cur->next != NULL ) {
-		if ( strcmp( config->last_wp, get_file_name( lst_cur->filename ) ) == 0 ){
-			dbg( "select last image: %s", config->last_wp );
-			break;
-		}
-		lst_cur = lst_cur->next;
-	}
+    while ( lst_cur->next != NULL ) {
+        if ( strcmp( config->last_wp, get_file_name( lst_cur->filename ) ) == 0 ){
+            dbg( "select last image: %s", config->last_wp );
+            break;
+        }
+        lst_cur = lst_cur->next;
+    }
     
     char switch_command[PATH_MAX+NAME_MAX+25];    
     while ( 1 ){
         
-        sprintf( switch_command, "pcmanfm --set-wallpaper=%s", lst_cur->filename );
+        sprintf( switch_command, "pcmanfm --set-wallpaper=%s --wallpaper-mode=%s", lst_cur->filename, config->wp_mode );
         strcpy( config->last_wp, get_file_name( lst_cur->filename ) );
         save_config( config_file, config );
         
@@ -115,8 +127,8 @@ int main ( int argc, char *argv[] ){
         
         #ifndef DEBUG
         if ( system( switch_command ) == -1 ){
-			fprintf( stderr, "Execution error for command '%s'\n", switch_command );
-		}
+            fprintf( stderr, "Execution error for command '%s'\n", switch_command );
+        }
         #endif
         
         #ifdef DEBUG
@@ -150,6 +162,24 @@ void dbg( char *msg , ... ){
         fprintf( stdout, "\n" );
     }
     #endif
+}
+
+char *lower_case ( char *str ){
+    int i = 0, len = strlen( str );
+    for ( i = 0 ; i <= len ; i++ ){
+        if ( str[i] >= 'A' && str[i] <= 'Z' )
+            str[i] += ( 'a' - 'A' );
+    }
+    return str;
+}
+
+char *upper_case ( char *str ){
+    int i = 0, len = strlen( str );
+    for ( i = 0 ; i <= len ; i++ ){
+        if ( str[i] >= 'a' && str[i] <= 'z' )
+            str[i] -= ( 'a' - 'A' );
+    }
+    return str;
 }
 
 char *add_slash ( char *dir ){
@@ -216,13 +246,22 @@ char* get_file_name ( char *file ){
 }
 
 void show_help ( char *prgname ) {
-    fprintf( stdout, "BackGroundChanger - switch desktop background in a LXDE desktop environment using PCManFM.\n\n" );
+    fprintf( stdout, "%s - %s.\n\n", APP_NAME, APP_DESC );
     fprintf( stdout, "Usage:\n%s [OPTIONS]\n\n", prgname );
     fprintf( stdout, "Options:\n");
-    fprintf( stdout, "-d\tdirectory name of the background images\n" );
-    fprintf( stdout, "-h\tshow this help text\n" );
-    fprintf( stdout, "-r\tcheck the directory recursive\n" );
-    fprintf( stdout, "-t\ttimeout between images in minutes (default is 10 mins)\n\n" );
+    fprintf( stdout, "-d <PATH>\tdirectory name of the background images\n" );
+    fprintf( stdout, "-h\t\tshow this help text\n" );
+    fprintf( stdout, "-m <MODE>\tset wallpaper mode (see available modes at bottom)\n" );
+    fprintf( stdout, "-r\t\tcheck the directory recursive\n" );
+    fprintf( stdout, "-t <MINUTES>\ttimeout between images in minutes (default is 10 mins)\n" );
+    fprintf( stdout, "-v\t\tshow the version and quit\n\n" );
+    fprintf( stdout, "Available wallpaper modes:\n" );
+    fprintf( stdout, " center\t\tplace on center of monitor\n" );
+    fprintf( stdout, " crop\t\tstretch and crop to fill monitor\n" );
+    fprintf( stdout, " fit\t\tstretch to fit monitor size\n" );
+    fprintf( stdout, " screen\t\tstretch to fill entire screen\n" );
+    fprintf( stdout, " stretch\tstretch to fill entire monitor (default)\n" );
+    fprintf( stdout, " tile\t\ttile to fill entire monitor\n\n" );
 }
 
 int lst_init( struct img_node_s **lst, char *txt )
@@ -326,6 +365,7 @@ int load_config ( char *config_file, struct config_s *myconf ){
         while ( fgets( line, PATH_MAX, file_ptr ) != NULL ){
             sscanf( line, "LastImagePath=%s", myconf->last_dir);
             sscanf( line, "LastWallpaper=%s", myconf->last_wp);
+            sscanf( line, "LastWallpaperMode=%s", myconf->wp_mode);
             sscanf( line, "LastTimeout=%ld", &myconf->timeout);
             sscanf( line, "CheckRecursive=%d", &myconf->recursive);
         }
@@ -344,6 +384,7 @@ int save_config ( char *config_file, struct config_s *myconf ){
     }
     fprintf( file_p, "LastImagePath=%s\n", myconf->last_dir );
     fprintf( file_p, "LastWallpaper=%s\n", myconf->last_wp );
+    fprintf( file_p, "LastWallpaperMode=%s\n", myconf->wp_mode );
     fprintf( file_p, "LastTimeout=%ld\n", myconf->timeout );
     fprintf( file_p, "CheckRecursive=%d\n", myconf->recursive );
     fclose( file_p );
@@ -353,44 +394,37 @@ int save_config ( char *config_file, struct config_s *myconf ){
 
 int check_dir( char *image_dir , struct img_node_s **lst , int recursive ){
 
-	int images = 0;
-	struct dirent *direntry = NULL;		
-	DIR *dirp = opendir( image_dir );
-	
-	add_slash( image_dir );
-	
-	while ( ( direntry = readdir( dirp ) ) != NULL) {
-		
-		if ( strcmp ( direntry->d_name, "." ) != 0 && strcmp ( direntry->d_name, ".." ) != 0 ){
-			char fullpathandfile[PATH_MAX + NAME_MAX];
-			
-			strcpy( fullpathandfile , image_dir );
-			strcat ( fullpathandfile , direntry->d_name );
-			
-			if ( is_dir( fullpathandfile ) == 0 ){
-				if ( recursive == 1 ){
-					images += check_dir( fullpathandfile , &*lst , recursive );
-				}
-			}
-			else{
-				char *file_ext = get_file_ext( direntry->d_name );
-				if ( strcmp ( file_ext, "bmp" ) == 0 || strcmp ( file_ext, "BMP" ) == 0 ){
-					lst_append( &*lst, fullpathandfile );
-					images++;
-				}
-				else if ( strcmp ( file_ext, "png" ) == 0 || strcmp ( file_ext, "PNG" ) == 0 ){
-					lst_append( &*lst, fullpathandfile );
-					images++;
-				}
-				else if ( strcmp ( file_ext, "jpg" ) == 0 || strcmp ( file_ext, "jpeg" ) == 0 || strcmp ( file_ext, "JPG" ) == 0 || strcmp ( file_ext, "JPEG" ) == 0){
-					lst_append( &*lst, fullpathandfile );
-					images++;
-				}
-			}
-		}
-		
-	}
-	closedir ( dirp );
-	
-	return images;
+    int images = 0;
+    struct dirent *direntry = NULL;     
+    DIR *dirp = opendir( image_dir );
+    
+    add_slash( image_dir );
+    
+    while ( ( direntry = readdir( dirp ) ) != NULL) {
+        
+        if ( strcmp ( direntry->d_name, "." ) != 0 && strcmp ( direntry->d_name, ".." ) != 0 ){
+            char fullpathandfile[PATH_MAX + NAME_MAX];
+            
+            strcpy( fullpathandfile , image_dir );
+            strcat ( fullpathandfile , direntry->d_name );
+            
+            if ( is_dir( fullpathandfile ) == 0 ){
+                if ( recursive == 1 ){
+                    images += check_dir( fullpathandfile , &*lst , recursive );
+                }
+            }
+            else{
+                char *file_ext = lower_case( get_file_ext( direntry->d_name ) );
+                if ( strcmp ( file_ext, "bmp" ) == 0 || strcmp ( file_ext, "png" ) == 0 || strcmp ( file_ext, "jpeg" ) == 0 || strcmp ( file_ext, "jpg" ) == 0 ){
+                    lst_append( &*lst, fullpathandfile );
+                    images++;
+                }
+            }
+        }
+        
+    }
+    closedir ( dirp );
+    
+    return images;
 }
+
