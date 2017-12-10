@@ -1,12 +1,13 @@
 CC=gcc
 CFLAGS=-I.
+SRC=bgchanger.c
 DEPS=bgchanger.h
 OBJ=bgchanger.o
 EXE=lxbgc
 
-%.o: %.c $(DEPS)
-	$(CC) -Wall -O3 -c -o $@ $< $(CFLAGS)
-
-bgchanger: $(OBJ) 
-	$(CC) -Wall -O3 -o $(EXE) $^ $(CFLAGS)
+bgchanger: $(SRC) $(DEPS) 
+	$(CC) -Wall -O3 -o $(EXE) $(SRC) $(CFLAGS)
 	
+debug: $(SRC) $(DEPS)
+	$(CC) -Wall -DDEBUG -o $(EXE) $(SRC) $(CFLAGS)
+

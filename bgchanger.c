@@ -290,7 +290,8 @@ void lst_append( struct img_node_s **lst, char *txt )
       cur = cur->next;
     }
     cur->next = malloc( sizeof( struct img_node_s ) );
-    cur->next->filename = malloc( sizeof( char ) * (unsigned int)strlen( txt ) );
+    //cur->next->filename = malloc( sizeof( char ) * (unsigned int)strlen( txt ) );
+    cur->next->filename = calloc( (unsigned int)strlen( txt ) + 1 , sizeof( char ) );
     strcpy ( cur->next->filename, txt );
     cur->next->next = NULL;
   }
@@ -407,6 +408,7 @@ int check_dir( char *image_dir , struct img_node_s **lst , int recursive ){
             
             strcpy( fullpathandfile , image_dir );
             strcat ( fullpathandfile , direntry->d_name );
+            dbg( "found file: %s", direntry->d_name );
             
             if ( is_dir( fullpathandfile ) == 0 ){
                 if ( recursive == 1 ){
